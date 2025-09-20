@@ -1,12 +1,9 @@
 #pragma once
 #include <array>
-#include <vector>
-#include <optional>
 #include <tuple>
 
 namespace util {
 
-    // Risultato della stima delle bande
     struct OptimalBandsResult {
         double d_estimated = NAN;
         double u_estimated = NAN;
@@ -19,17 +16,17 @@ namespace util {
         double f_input = NAN;
     };
 
-    // funzione MATLAB-like
+    // MATLAB-like integral  sqrt(2/pi) * ∫_y^x exp(t^2/2) dt
     double erfid_matlab(double x, double y);
 
-    // ritorno di lungo periodo
+    // Long-run return μ and chosen leverage f*
     std::tuple<double,double> long_return(
         double d, double u,
         double c, double l,
         double sigma, double f
     );
 
-    // funzione per calcolare le bande ottimali
+    // Compute optimal trading bands (NLopt)
     OptimalBandsResult optimal_trading_bands(
         int M, double l, double f,
         double k_hat, double sigma_hat,

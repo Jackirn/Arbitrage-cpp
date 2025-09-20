@@ -58,24 +58,27 @@ OptimalBandsResult optimal_trading_bands(
     double k_hat, double sigma_hat,
     double C, double alpha, int grid
 ){
+    (void)M; (void)alpha; (void)grid; // se non usati nella tua versione attuale
+
     OptimalBandsResult R;
     R.f_input = f;
 
-    double theta = 1.0 / k_hat;
-    double sigma_stat = sigma_hat / std::sqrt(2 * k_hat);
-    double c = C / sigma_stat;
+    const double theta      = 1.0 / k_hat;
+    const double sigma_stat = sigma_hat / std::sqrt(2 * k_hat);
+    const double c          = C / sigma_stat;
 
     // objective
-    auto obj_fun = [&](const std::vector<double>& x, std::vector<double>& grad) {
-        auto [mu, fstar] = long_return(x[0], x[1], c, l, sigma_stat, f);
+    auto obj_fun = [&](const std::vector<double>& x, std::vector<double>& /*grad*/) {
+        auto tup = long_return(x[0], x[1], c, l, sigma_stat, f);
+        double mu = std::get<0>(tup);
         return -mu;
     };
 
     // bounds
-    double d_min = l + 0.01;
-    double d_max = 0.6;
-    double u_min = l + C;
-    double u_max = 3.0;
+    const double d_min = l + 0.01;
+    const double d_max = 0.6;
+    const double u_min = l + C;
+    const double u_max = 3.0;
 
     nlopt::opt opt(nlopt::LD_SLSQP, 2);
     opt.set_lower_bounds({d_min, u_min});
@@ -90,7 +93,7 @@ OptimalBandsResult optimal_trading_bands(
     opt.set_maxeval(500);
 
     std::vector<double> x0 = {-0.5, 0.5};
-    double minf;
+    double minf = 0.0;
     nlopt::result result = opt.optimize(x0, minf);
 
     if (result > 0) {
@@ -107,7 +110,7 @@ OptimalBandsResult optimal_trading_bands(
         return R;
     }
 
-    // TODO: aggiungere bootstrap qui (percentili, interp)
+    // (Bootstrap CI: aggiungilo qui se/quando implementi la parte M>1)
     return R;
 }
 

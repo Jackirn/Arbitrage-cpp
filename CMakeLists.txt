@@ -4,39 +4,42 @@ project(Arbitrage_cpp LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- Boost (solo header) ---
-find_package(Boost 1.70 REQUIRED)  # Boost::boost
+# === Boost ===
+# Se usi solo boost::math (header-only) non serve find_package
+find_package(Boost REQUIRED)
 
-# --- NLopt (Homebrew) ---
-# Non usare find_package(NLopt) perché spesso non installa il Config file.
+# === NLopt ===
 find_path(NLOPT_INCLUDE_DIR nlopt.h
         HINTS /opt/homebrew/include /opt/homebrew/opt/nlopt/include)
+
 find_library(NLOPT_LIBRARY nlopt
         HINTS /opt/homebrew/lib /opt/homebrew/opt/nlopt/lib)
 
 if(NLOPT_INCLUDE_DIR AND NLOPT_LIBRARY)
-    message(STATUS "Found NLopt include: ${NLOPT_INCLUDE_DIR}")
-    message(STATUS "Found NLopt library: ${NLOPT_LIBRARY}")
+    message(STATUS "Found NLopt: ${NLOPT_LIBRARY}")
+    include_directories(${NLOPT_INCLUDE_DIR})
 else()
-    message(FATAL_ERROR "NLopt not found. Try: brew install nlopt")
+    message(FATAL_ERROR "NLopt not found")
 endif()
 
+# === Executable ===
 add_executable(Arbitrage_cpp
         src/main.cpp
         src/DataOrdering.cpp
         src/Loaders.cpp
         src/OptimalBands.cpp
-        include/utilities/StatisticalBootstrap.hpp
+        src/StatisticalBootstrap.cpp
 )
 
+# === Includes ===
 target_include_directories(Arbitrage_cpp
         PRIVATE
         ${CMAKE_SOURCE_DIR}/include
-        ${NLOPT_INCLUDE_DIR}
 )
 
+# === Link ===
 target_link_libraries(Arbitrage_cpp
         PRIVATE
         Boost::boost
-        ${NLOPT_LIBRARY}     # <— usa il path assoluto trovato da find_library
+        ${NLOPT_LIBRARY}
 )
