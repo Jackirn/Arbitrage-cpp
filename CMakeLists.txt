@@ -27,8 +27,9 @@ add_executable(Arbitrage_cpp
         src/main.cpp
         src/DataOrdering.cpp
         src/Loaders.cpp
-        src/OptimalBands.cpp
         src/StatisticalBootstrap.cpp
+        src/OptimalBands.cpp
+        src/Backtest.cpp            # <— NEW
 )
 
 # === Includes ===

@@ -14,6 +14,7 @@
 #include "utilities/Loaders.hpp"
 #include "utilities/StatisticalBootstrap.hpp"
 #include "utilities/OptimalBands.hpp"
+#include "utilities/Backtest.hpp"
 
 int main() {
     using namespace util;
@@ -21,7 +22,8 @@ int main() {
     try {
         std::cout << "=== Arbitrage C++ Pipeline ===\n";
 
-        // ====== 1) LOAD ======
+        /// LOAD
+
         const std::string csv_path = "HO-LGO.csv";
         const std::string time_col = "*"; // auto-detect "Timestamp" o "..._Timestamp"
 
@@ -59,7 +61,8 @@ int main() {
             return 1;
         }
 
-        // ====== 2) TRIM & SPLIT ======
+        /// TRIM & SPLIT
+
         auto [data_IS_8_16, data_OS] = trim_and_split_price_table(
             tbl, /*IS 8-16*/ 8, 16, /*OS exclude 17-20*/ 17, 20, /*split months*/ 9
         );
@@ -67,7 +70,8 @@ int main() {
             tbl, /*IS 9-16*/ 9, 16, /*OS exclude 17-20*/ 17, 20, /*split months*/ 9
         );
 
-        // ====== 3) OUTLIERS ======
+        /// OUTLIERS
+
         auto out_IS_8_16 = remove_outliers(data_IS_8_16);
         auto out_IS_9_16 = remove_outliers(data_IS_9_16);
         auto out_OS      = remove_outliers(data_OS);
@@ -86,7 +90,8 @@ int main() {
                   << " -> clean: " << clean_OS.size()
                   << " | outliers: " << out_OS.outliers.size() << "\n";
 
-        // ====== 4) BOOTSTRAP OU ======
+        /// BOOTSTRAP OU
+
         // IS 8-16: M=1000
         {
             int    M_boot  = 1000;
@@ -110,7 +115,8 @@ int main() {
             stats::print_ou_estimates(R_9_16);
         }
 
-        // ====== 5) COSTO DI TRANSAZIONE MEDIO (su IS 9-16)
+        /// COSTO DI TRANSAZIONE MEDIO (su IS 9-16)
+
         double C = 0.0;
         {
             double sum = 0.0;
@@ -130,7 +136,8 @@ int main() {
             std::cout << "\n[Info] C (avg log-transaction cost) = " << C << " (n=" << count << ")\n";
         }
 
-        // ====== 6) OPTIMAL BANDS sweep su l e f ======
+        /// OPTIMAL BANDS sweep su l e f
+
         const std::vector<double> l_list = {-1.282, -1.645, -1.96, -2.326};
 
         struct FCase { std::string label; double value; };
@@ -141,9 +148,10 @@ int main() {
             {"opt", std::numeric_limits<double>::quiet_NaN()} // NaN => calcola f*
         };
 
-        // Prendi i point estimates OU dal bootstrap IS 8–16
-        // PRIMA (sbagliato se i campi non hanno _hat)
-        // ====== 4) BOOTSTRAP OU ======
+        // Prendi i point estimates OU dal bootstrap IS 8–1
+
+        ///  4) BOOTSTRAP OU
+
         // IS 8-16: M=1000
         stats::OUBootstrapResult R_8_16;
         {
@@ -214,7 +222,8 @@ int main() {
             }
         }
 
-        // ====== 7) Stampa tabella risultati ======
+        // Stampa tabella risultati
+
         std::cout << "\n=== Optimal Bands Results ===\n";
         std::cout << std::left
                   << std::setw(10) << "Stop-loss"
@@ -254,7 +263,8 @@ int main() {
                       << "\n";
         }
 
-        // ====== 8) Salva CSV risultati ======
+        // Salva CSV risultati
+
         {
             std::ofstream fout("outputs/optimal_bands_results.csv");
             if (!fout.is_open()) {
@@ -282,6 +292,74 @@ int main() {
         }
 
         std::cout << "\n[OK] Fine pipeline.\n";
+
+        // ---- scegli un setup (esempio: l = -1.96, f = 1) e calcola d*, u* ----
+    double l_bt = -1.96;
+    double f_bt = 1.0;
+
+    auto bands_bt = util::optimal_trading_bands(
+        /*M=*/100000, l_bt, f_bt,
+        /*k_hat*/ R_8_16.k, /*sigma_hat*/ R_8_16.sigma,
+        /*C=*/ C, /*alpha=*/0.05, /*grid=*/100
+    );
+
+    std::cout << "\n[Backtest] Using bands: d*=" << bands_bt.d_estimated
+              << ", u*=" << bands_bt.u_estimated
+              << " (l=" << l_bt << ", f=" << f_bt << ")\n";
+
+    // ---- prepara config ----
+    util::BacktestConfig cfg;
+    cfg.k_hat     = R_8_16.k;
+    cfg.eta_hat   = R_8_16.eta;
+    cfg.sigma_hat = R_8_16.sigma;
+    cfg.d = -std::abs(bands_bt.d_estimated);  // per sicurezza negativo
+    cfg.u =  std::abs(bands_bt.u_estimated);
+    cfg.l = l_bt;
+    cfg.f = f_bt;
+    cfg.symmetric = true; // attiva lato short
+
+    // ---- esegui su OS pulito ----
+    auto BT = util::backtest_os(clean_OS, cfg);
+
+    // ---- stampa metriche ----
+    std::cout << "\n=== OS Backtest Summary ===\n";
+    std::cout << "Trades: "     << BT.metrics.n_trades
+              << " | Hit ratio: " << BT.metrics.hit_ratio
+              << " | Avg pnl: "   << BT.metrics.avg_pnl
+              << " | Sum pnl: "   << BT.metrics.sum_pnl
+              << "\nSharpe (per bar): " << BT.metrics.sharpe_bar
+              << " | Max DD (log): "    << BT.metrics.max_dd
+              << " | Equity end (log): "<< BT.metrics.equity_end
+              << "\n";
+
+    // ---- salva CSV trades & equity ----
+    {
+        std::ofstream ft("outputs/os_trades.csv");
+        if (ft.is_open()){
+            ft << "entry_time,exit_time,z_entry,z_exit,x_entry,x_exit,f,costs,pnl,bars\n";
+            for (const auto& t : BT.trades){
+                ft << t.entry_time << "," << t.exit_time << ","
+                   << t.z_entry << "," << t.z_exit << ","
+                   << t.x_entry << "," << t.x_exit << ","
+                   << t.f << "," << t.costs << ","
+                   << t.pnl << "," << t.bars << "\n";
+            }
+            std::cout << "[Info] Saved trades -> outputs/os_trades.csv\n";
+        } else {
+            std::cerr << "[Warn] cannot write outputs/os_trades.csv\n";
+        }
+    }
+    {
+        std::ofstream fe("outputs/os_equity.csv");
+        if (fe.is_open()){
+            fe << "time,log_equity\n";
+            for (size_t i=0;i<BT.equity_path.size();++i)
+                fe << BT.equity_time[i] << "," << BT.equity_path[i] << "\n";
+            std::cout << "[Info] Saved equity -> outputs/os_equity.csv\n";
+        } else {
+            std::cerr << "[Warn] cannot write outputs/os_equity.csv\n";
+        }
+    }
         return 0;
 
     } catch (const std::exception& ex) {
